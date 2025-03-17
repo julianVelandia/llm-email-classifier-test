@@ -1,12 +1,11 @@
 # Configuration and imports
+import logging
 import os
-import json
+from typing import Dict, Optional
+
 import pandas as pd
-from typing import Dict, List, Optional, Tuple
 from dotenv import load_dotenv
 from openai import OpenAI
-from datetime import datetime
-import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -66,28 +65,71 @@ class EmailProcessor:
             "support_request", "other"
         }
 
+        self.model = "gpt-4o"
+
     def classify_email(self, email: Dict) -> Optional[str]:
         """
         Classify an email using LLM.
         Returns the classification category or None if classification fails.
-        
-        TODO: 
+
         1. Design and implement the classification prompt
         2. Make the API call with appropriate error handling
         3. Validate and return the classification
         """
-        pass
+        prompt = (
+            "Please classify the following email as one of the following categories: "
+            f"{', '.join(self.valid_categories)}"
+            f"\nSubject: {email['subject']}\nBody: {email['body']}"
+            "Return only the category or None if classification fails (JUST THE CATEGORY, NO QUOTES)"
+        )
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+            category_as_a_text = completion.choices[0].message.content.strip().lower()
+            return category_as_a_text if category_as_a_text in self.valid_categories else None
+        except Exception as e:
+            logger.error(f"Error with the LLM provider: {e}")
+            return None
 
     def generate_response(self, email: Dict, classification: str) -> Optional[str]:
         """
         Generate an automated response based on email classification.
         
-        TODO:
         1. Design the response generation prompt
         2. Implement appropriate response templates
         3. Add error handling
         """
-        pass
+        prompt = (
+            "Generate an automated response based on email classification"
+            f"The category is {classification}"
+            f"\nSubject: {email['subject']}\nBody: {email['body']}"
+            "Return only the message (JUST THE MESSAGE, NO EXTRA TEXT)"
+        )
+
+        try:
+            completion = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+            return completion.choices[0].message.content
+        except Exception as e:
+            logger.error(f"Error with the LLM provider: {e}")
+            return None
 
 
 class EmailAutomationSystem:
@@ -107,47 +149,70 @@ class EmailAutomationSystem:
         Process a single email through the complete pipeline.
         Returns a dictionary with the processing results.
         
-        TODO:
         1. Implement the complete processing pipeline
         2. Add appropriate error handling
         3. Return processing results
         """
-        pass
+        classification = self.processor.classify_email(email)
+        if not classification:
+            return {"email_id": email["id"], "success": False, "classification": None, "response_sent": False}
+        handler = self.response_handlers.get(classification, self._handle_other)
+
+        response = handler(email)
+
+        return {
+            "email_id": email["id"],
+            "success": True,
+            "classification": classification,
+            "response_sent": response
+        }
 
     def _handle_complaint(self, email: Dict):
         """
         Handle complaint emails.
-        TODO: Implement complaint handling logic
         """
-        pass
+        response = self.processor.generate_response(email, "complaint")
+        send_complaint_response(email["id"], response)
+        return response
+
 
     def _handle_inquiry(self, email: Dict):
         """
         Handle inquiry emails.
-        TODO: Implement inquiry handling logic
         """
-        pass
+        response = self.processor.generate_response(email, "inquiry")
+        send_standard_response(email["id"], response)
+        return response
+
 
     def _handle_feedback(self, email: Dict):
         """
         Handle feedback emails.
-        TODO: Implement feedback handling logic
         """
-        pass
+        response = self.processor.generate_response(email, "feedback")
+        log_customer_feedback(email["id"], response)
+        return response
+
 
     def _handle_support_request(self, email: Dict):
         """
         Handle support request emails.
-        TODO: Implement support request handling logic
         """
-        pass
+        response = self.processor.generate_response(email, "support_request")
+        create_support_ticket(email["id"], response)
+        return response
+
 
     def _handle_other(self, email: Dict):
         """
         Handle other category emails.
-        TODO: Implement handling logic for other categories
         """
-        pass
+        # We have to return a response generated by LLM? or a default message
+        response = self.processor.generate_response(email, "other")
+        send_standard_response(email["id"], response)
+        return response
+
+
 
 # Mock service functions
 def send_complaint_response(email_id: str, response: str):
